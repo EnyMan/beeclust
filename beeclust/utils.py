@@ -14,6 +14,15 @@ class Coordinates:
     def __str__(self):
         return f'x={self.x}, y={self.y}, s={self.steps}'
 
+    def __hash__(self):
+        return hash(f'{self.x}:{self.y}')
+
+    def __eq__(self, other):
+        if isinstance(other, Coordinates):
+            return other.x == self.x and other.y == self.y
+        else:
+            return False
+
     def copy(self):
         return Coordinates(self.x, self.y, self.shape, self.steps)
 
@@ -88,9 +97,13 @@ def calculate_heatmap(np_map, T_heater, T_cooler, T_env, k_temp):
                 dist_heater = np.inf
                 queue = deque()
                 queue.append(Coordinates(row, col, np_map.shape))
-                while len(queue) > 0 or \
-                        (dist_cooler == 1 and dist_heater == 1):
+                visited = set()
+                while len(queue) > 0:
                     start = queue.popleft()
+                    if start in visited:
+                        continue
+                    else:
+                        visited.add(start)
                     if np_map[start.x, start.y] == HEATER:
                         if start.steps < dist_heater:
                             dist_heater = start.steps
@@ -122,7 +135,6 @@ def calculate_heatmap(np_map, T_heater, T_cooler, T_env, k_temp):
                     move = start.move_down_left()
                     queue.append(move) if move else None
 
-                print(dist_heater, dist_cooler)
                 heating = (1 / dist_heater) * (T_heater - T_env)
                 cooling = (1 / dist_cooler) * (T_env - T_cooler)
                 heatmap[row, col] = \
