@@ -4,6 +4,14 @@ import numpy as np
 from collections import deque
 
 
+def check_type(check, targets, key):
+    for target in targets:
+        if isinstance(check, target):
+            return check
+
+    raise TypeError(f'{key} is invalid type')
+
+
 class Coordinates:
     def __init__(self, a, b, shape, steps=0):
         self.x = a
