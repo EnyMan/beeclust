@@ -7,3 +7,9 @@ BEE_LEFT = 4
 WALL = 5
 HEATER = 6
 COOLER = 7
+
+TURN = {BEE_UP: BEE_DOWN,
+        BEE_RIGHT: BEE_LEFT,
+        BEE_DOWN: BEE_UP,
+        BEE_LEFT: BEE_RIGHT,
+        }
