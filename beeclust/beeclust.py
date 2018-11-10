@@ -90,7 +90,7 @@ class BeeClust:
 
     def _stop_time(self, bee: Tuple[int, int]) -> int:
         T_local = self.heatmap[bee[0], bee[1]]
-        wait_time = min(
+        wait_time = max(
             int(self.k_stay / (1 + np.abs(self.T_ideal - T_local))),
             self.min_wait
         )
@@ -102,11 +102,11 @@ class BeeClust:
         else:
             self.map[bee[0], bee[1]] = TURN[self.map[bee[0], bee[1]]]
 
-    def _change_direction(self, bee):
-        new_dir = np.random.choice(
-            [
-                BEE_LEFT, BEE_DOWN, BEE_RIGHT, BEE_UP
-            ].remove(self.map[bee[0], bee[1]]))
+    def _change_direction(self, bee, amnesia):
+        moves = [BEE_LEFT, BEE_DOWN, BEE_RIGHT, BEE_UP]
+        if not amnesia:
+            moves.remove(int(self.map[bee[0], bee[1]]))
+        new_dir = np.random.choice(moves)
 
         self.map[bee[0], bee[1]] = new_dir
 
@@ -121,11 +121,12 @@ class BeeClust:
             # BEE WAITED
             if self.map[bee[0], bee[1]] < AMNESIA:
                 self.map[bee[0], bee[1]] += 1
+                continue
 
             # BEE CHANGE DIRECTION OR AMNESIA
             amnesia = self.map[bee[0], bee[1]] == AMNESIA
             if np.random.rand() < self.p_changedir or amnesia:
-                self._change_direction(bee)
+                self._change_direction(bee, amnesia)
                 if amnesia:
                     continue
 
