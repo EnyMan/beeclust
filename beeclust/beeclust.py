@@ -90,7 +90,11 @@ class BeeClust:
 
     def _stop_time(self, bee: Tuple[int, int]) -> int:
         T_local = self.heatmap[bee[0], bee[1]]
-        return -int(self.k_stay / (1 + np.abs(self.T_ideal - T_local)))
+        wait_time = min(
+            int(self.k_stay / (1 + np.abs(self.T_ideal - T_local))),
+            self.min_wait
+        )
+        return -wait_time
 
     def _obstacle_hit(self, bee):
         if np.random.rand() < self.p_wall:
