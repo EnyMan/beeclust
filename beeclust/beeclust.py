@@ -90,7 +90,7 @@ class BeeClust:
 
     def _stop_time(self, bee: Tuple[int, int]) -> int:
         T_local = self.heatmap[bee[0], bee[1]]
-        return int(self.k_stay / (1 + np.abs(self.T_ideal - T_local)))
+        return -int(self.k_stay / (1 + np.abs(self.T_ideal - T_local)))
 
     def _obstacle_hit(self, bee):
         if np.random.rand() < self.p_wall:
@@ -106,35 +106,60 @@ class BeeClust:
 
         self.map[bee[0], bee[1]] = new_dir
 
+    def _meet(self, bee):
+        if np.random.rand() < self.p_meet:
+            self.map[bee[0], bee[1]] = self._stop_time(bee)
+
     def tick(self) -> int:
         moved = 0
         bees = self.bees
         for bee in bees:
+            # BEE WAITED
+            if self.map[bee[0], bee[1]] < AMNESIA:
+                self.map[bee[0], bee[1]] += 1
+
+            # BEE CHANGE DIRECTION OR AMNESIA
             amnesia = self.map[bee[0], bee[1]] == AMNESIA
             if np.random.rand() < self.p_changedir or amnesia:
                 self._change_direction(bee)
                 if amnesia:
                     continue
+
+            # BEE TRIES TO GO UP
             if self.map[bee[0], bee[1]] == BEE_UP:
                 next_cell = self.map[bee[0] - 1, bee[1]]
                 if bee[0] - 1 < 0 or next_cell in OBSTACLES:
                     self._obstacle_hit(bee)
                     continue
-            if self.map[bee[0], bee[1]] == BEE_DOWN:
+                if next_cell < EMPTY or next_cell in BEE:
+                    self._meet(bee)
+
+            # BEE TRIES TO GO DOWN
+            elif self.map[bee[0], bee[1]] == BEE_DOWN:
                 next_cell = self.map[bee[0] + 1, bee[1]]
                 if bee[0] + 1 >= self.map.shape[0] or next_cell in OBSTACLES:
                     self._obstacle_hit(bee)
                     continue
-            if self.map[bee[0], bee[1]] == BEE_LEFT:
+                if next_cell < EMPTY or next_cell in BEE:
+                    self._meet(bee)
+
+            # BEE TRIES TO GO LEFT
+            elif self.map[bee[0], bee[1]] == BEE_LEFT:
                 next_cell = self.map[bee[0], bee[1] - 1]
                 if bee[1] - 1 < 0 or next_cell in OBSTACLES:
                     self._obstacle_hit(bee)
                     continue
-            if self.map[bee[0], bee[1]] == BEE_RIGHT:
+                if next_cell < EMPTY or next_cell in BEE:
+                    self._meet(bee)
+
+            # BEE TRIES TO GO RIGHT
+            elif self.map[bee[0], bee[1]] == BEE_RIGHT:
                 next_cell = self.map[bee[0], bee[1] + 1]
                 if bee[1] + 1 >= self.map.shape[1] or next_cell in OBSTACLES:
                     self._obstacle_hit(bee)
                     continue
+                if next_cell < EMPTY or next_cell in BEE:
+                    self._meet(bee)
 
         return moved
 
