@@ -1,6 +1,7 @@
 from .utils import calculate_heatmap, np, check_type
 from .constants import *
 
+from typing import Tuple
 
 class BeeClust:
     def __init__(self, map, p_changedir=0.2, p_wall=0.8,
@@ -80,21 +81,64 @@ class BeeClust:
         return list(swarms)
 
     @property
-    def score(self):
+    def score(self) -> float:
         temps = 0
         bees = self.bees
         for bee in bees:
             temps += self.heatmap[bee[0], bee[1]]
         return temps / len(bees)
 
-    def tick(self):
-        pass
+    def _stop_time(self, bee: Tuple[int, int]) -> int:
+        T_local = self.heatmap[bee[0], bee[1]]
+        return int(self.k_stay / (1 + np.abs(self.T_ideal - T_local)))
 
-    def forget(self):
+    def _wall(self, bee):
+        if np.random.rand() < self.p_wall:
+            self.map[bee[0], bee[1]] = self._stop_time(bee)
+        else:
+            self.map[bee[0], bee[1]] = TURN[self.map[bee[0], bee[1]]]
+
+    def _change_direction(self, bee):
+        new_dir = np.random.choice(
+            [
+                BEE_LEFT, BEE_DOWN, BEE_RIGHT, BEE_UP
+            ].remove(self.map[bee[0], bee[1]]))
+
+        self.map[bee[0], bee[1]] = new_dir
+
+    def tick(self) -> int:
+        moved = 0
+        bees = self.bees
+        for bee in bees:
+            amnesia = self.map[bee[0], bee[1]] == AMNESIA
+            if np.random.rand() < self.p_changedir or amnesia:
+                self._change_direction(bee)
+                if amnesia:
+                    continue
+            if self.map[bee[0], bee[1]] == BEE_UP:
+                if bee[0] - 1 < 0:
+                    self._wall(bee)
+                    continue
+            if self.map[bee[0], bee[1]] == BEE_DOWN:
+                if bee[0] + 1 >= self.map.shape[0]:
+                    self._wall(bee)
+                    continue
+            if self.map[bee[0], bee[1]] == BEE_LEFT:
+                if bee[0] - 1 < 0:
+                    self._wall(bee)
+                    continue
+            if self.map[bee[0], bee[1]] == BEE_RIGHT:
+                if bee[0] + 1 >= self.map.shape[1]:
+                    self._wall(bee)
+                    continue
+
+        return moved
+
+    def forget(self) -> None:
         for bee in self.bees:
             self.map[bee[0], bee[1]] = AMNESIA
 
-    def recalculate_heat(self):
+    def recalculate_heat(self) -> None:
         self.heatmap = \
             calculate_heatmap(self.map, self.T_heater,
                               self.T_cooler, self.T_env, self.k_temp)
