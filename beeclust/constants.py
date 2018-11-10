@@ -8,6 +8,13 @@ WALL = 5
 HEATER = 6
 COOLER = 7
 
+BEE = [
+        BEE_UP,
+        BEE_RIGHT,
+        BEE_DOWN,
+        BEE_LEFT,
+]
+
 OBSTACLES = [
         WALL,
         HEATER,
