@@ -92,7 +92,7 @@ class BeeClust:
         T_local = self.heatmap[bee[0], bee[1]]
         return int(self.k_stay / (1 + np.abs(self.T_ideal - T_local)))
 
-    def _wall(self, bee):
+    def _obstacle_hit(self, bee):
         if np.random.rand() < self.p_wall:
             self.map[bee[0], bee[1]] = self._stop_time(bee)
         else:
@@ -116,20 +116,24 @@ class BeeClust:
                 if amnesia:
                     continue
             if self.map[bee[0], bee[1]] == BEE_UP:
-                if bee[0] - 1 < 0:
-                    self._wall(bee)
+                next_cell = self.map[bee[0] - 1, bee[1]]
+                if bee[0] - 1 < 0 or next_cell in OBSTACLES:
+                    self._obstacle_hit(bee)
                     continue
             if self.map[bee[0], bee[1]] == BEE_DOWN:
-                if bee[0] + 1 >= self.map.shape[0]:
-                    self._wall(bee)
+                next_cell = self.map[bee[0] + 1, bee[1]]
+                if bee[0] + 1 >= self.map.shape[0] or next_cell in OBSTACLES:
+                    self._obstacle_hit(bee)
                     continue
             if self.map[bee[0], bee[1]] == BEE_LEFT:
-                if bee[0] - 1 < 0:
-                    self._wall(bee)
+                next_cell = self.map[bee[0], bee[1] - 1]
+                if bee[1] - 1 < 0 or next_cell in OBSTACLES:
+                    self._obstacle_hit(bee)
                     continue
             if self.map[bee[0], bee[1]] == BEE_RIGHT:
-                if bee[0] + 1 >= self.map.shape[1]:
-                    self._wall(bee)
+                next_cell = self.map[bee[0], bee[1] + 1]
+                if bee[1] + 1 >= self.map.shape[1] or next_cell in OBSTACLES:
+                    self._obstacle_hit(bee)
                     continue
 
         return moved
