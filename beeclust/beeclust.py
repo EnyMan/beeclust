@@ -26,7 +26,7 @@ class BeeClust:
             raise ValueError('probability cant be negative')
 
         if k_temp < 0. or k_stay < 0. or min_wait < 0.:
-            raise ValueError('koeficients cant be negative')
+            raise ValueError("coefficients cant be negative")
 
         if T_heater < T_env:
             raise ValueError('T_heater cant be lower then T_env')
