@@ -1,4 +1,7 @@
 from setuptools import setup, find_packages
+from Cython.Build import cythonize
+import numpy
+
 
 setup(
     name='beeclust',
@@ -9,7 +12,7 @@ setup(
     keywords='numpy,console,simulation',
     license='Public Domain',
     url='https://github.com/EnyMan/beeclust',
-    packages=find_packages(),
+    #packages=find_packages(),
     classifiers=[
         'License :: Public Domain',
         'Operating System :: POSIX :: Linux',
@@ -20,5 +23,13 @@ setup(
         'Environment :: Console',
         ],
     zip_safe=False,
-    install_requires=['numpy'],
+    ext_modules=cythonize('beeclust/*.pyx', language='c++', language_level=3),
+    include_dirs=[numpy.get_include()],
+    setup_requires=[
+        'Cython',
+        'NumPy',
+    ],
+    install_requires=[
+        'NumPy',
+    ],
 )

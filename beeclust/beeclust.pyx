@@ -1,12 +1,55 @@
-from .utils import calculate_heatmap, np, check_type
-from .constants import *
+import cython
+from libcpp.vector cimport vector
+from libcpp.pair cimport pair
+from libcpp.set cimport set
+from libcpp.deque cimport deque
 
-from typing import Tuple
+cimport numpy
+
+from .utils import calculate_heatmap, np, check_type
+
+cdef int AMNESIA = -1
+cdef int EMPTY = 0
+cdef int BEE_UP = 1
+cdef int BEE_RIGHT = 2
+cdef int BEE_DOWN = 3
+cdef int BEE_LEFT = 4
+cdef int WALL = 5
+cdef int HEATER = 6
+cdef int COOLER = 7
+
+cdef list BEE = [
+        BEE_UP,
+        BEE_RIGHT,
+        BEE_DOWN,
+        BEE_LEFT,
+]
+
+cdef list OBSTACLES = [
+        WALL,
+        HEATER,
+        COOLER,
+]
+
+TURN = {
+        BEE_UP: BEE_DOWN,
+        BEE_RIGHT: BEE_LEFT,
+        BEE_DOWN: BEE_UP,
+        BEE_LEFT: BEE_RIGHT,
+}
 
 class BeeClust:
-    def __init__(self, map, p_changedir=0.2, p_wall=0.8,
-                 p_meet=0.8, k_temp=0.9, k_stay=50, T_ideal=35,
-                 T_heater=40, T_cooler=5, T_env=22, min_wait=2):
+    def __init__(self, numpy.ndarray[numpy.int64_t, ndim=2] map,
+                 float p_changedir=0.2,
+                 float p_wall=0.8,
+                 float p_meet=0.8,
+                 float k_temp=0.9,
+                 int k_stay=50,
+                 int T_ideal=35,
+                 int T_heater=40,
+                 int T_cooler=5,
+                 int T_env=22,
+                 int min_wait=2):
         self.map = check_type(map, [np.ndarray], 'map')
         self.p_changedir = check_type(p_changedir, [float, int], 'p_changedir')
         self.p_wall = check_type(p_wall, [float, int], 'p_wall')
@@ -34,51 +77,97 @@ class BeeClust:
         if T_cooler > T_env:
             raise ValueError('T_cooler cant be higher then T_env')
 
-        if not len(self.map.shape) == 2:
+        if self.map.ndim > 2:
             raise ValueError('invalid shape')
+        self.heatmap = np.zeros((map.shape[0], map.shape[1]))
+        self.recalculate_heat()
 
-        self.heatmap = calculate_heatmap(map, self.T_heater,
-                                         self.T_cooler, self.T_env,
-                                         self.k_temp)
-
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     @property
     def bees(self):
-        bees = []
-        for row in range(self.map.shape[0]):
-            for col in range(self.map.shape[1]):
-                if self.map[row, col] == EMPTY or self.map[row, col] > BEE_LEFT:
-                    pass
+        cdef vector[pair[int, int]] bees
+        cdef pair[int, int] coords
+        cdef int row, col
+        cdef numpy.int64_t[:, :] map_view = self.map
+        for row in range(map_view.shape[0]):
+            for col in range(map_view.shape[1]):
+                if map_view[row, col] == EMPTY or map_view[row, col] > BEE_LEFT:
+                    continue
                 else:
-                    bees.append((row, col))
-        return bees
+                    coords = pair[int,int](row, col)
+                    bees.push_back(coords)
+
+        p_bees = []
+        for i in range(bees.size()):
+            bee = (bees[i].first, bees[i].second)
+            p_bees.append(bee)
+
+        return p_bees
 
     @property
     def swarms(self):
-        procesed = set()
-        swarms = []
-        bees = self.bees
-        for bee_origin in bees:
-            if bee_origin in procesed:
+        cdef set[pair[int, int]] procesed
+        cdef deque[pair[int, int]] check
+        cdef pair[int, int] bee_origin, bee_l, bee_r, bee_u, bee_d, bee, t
+        cdef vector[pair[int, int]] swarm
+        cdef vector[vector[pair[int, int]]] swarms
+        cdef int found = 0
+        cdef unsigned int i = 0, j = 0, k = 0
+        cdef vector[pair[int, int]] bees
+
+        for p_bee in self.bees:
+            bees.push_back(pair[int,int](p_bee[0], p_bee[1]))
+
+        for i in range(bees.size()):
+            bee_origin = bees[i]
+            if procesed.find(bee_origin) != procesed.end():
                 continue
-            swarm = []
-            check = {bee_origin}
-            while len(check) > 0:
-                bee = check.pop()
-                procesed.add(bee)
-                if bee in swarm:
+            swarm.clear()
+            check.clear()
+            check.push_back(bee_origin)
+            while check.size() > 0:
+                bee = check.front()
+                check.pop_front()
+                procesed.insert(bee)
+
+                for j in range(swarm.size()):
+                    if bee == swarm[j]:
+                        found = 1
+                        break
+
+                if found == 1:
+                    found = 0
                     continue
                 else:
-                    swarm.append(bee)
-                if (bee[0] + 1, bee[1]) in bees:
-                    check.add((bee[0] + 1, bee[1]))
-                if (bee[0], bee[1] + 1) in bees:
-                    check.add((bee[0], bee[1] + 1))
-                if (bee[0] - 1, bee[1]) in bees:
-                    check.add((bee[0] - 1, bee[1]))
-                if (bee[0], bee[1] - 1) in bees:
-                    check.add((bee[0], bee[1] - 1))
-            swarms.append(swarm)
-        return list(swarms)
+                    swarm.push_back(bee)
+
+                bee_l = pair[int,int](bee.first + 1, bee.second)
+                bee_r = pair[int,int](bee.first, bee.second + 1)
+                bee_u = pair[int,int](bee.first - 1, bee.second)
+                bee_d = pair[int,int](bee.first, bee.second - 1)
+                j = 0
+                for j in range(bees.size()):
+                    if bee_l == bees[j]:
+                        check.push_back(bee_l)
+                    elif bee_r == bees[j] :
+                        check.push_back(bee_r)
+                    elif bee_u == bees[j]:
+                        check.push_back(bee_u)
+                    elif bee_d == bees[j]:
+                        check.push_back(bee_d)
+            swarms.push_back(swarm)
+
+        i = 0
+        j = 0
+
+        p_swarms = []
+        for i in range(swarms.size()):
+            p_swarm = []
+            for j in range(swarms[i].size()):
+                p_swarm.append((swarms[i][j].first, swarms[i][j].second))
+            p_swarms.append(p_swarm)
+        return p_swarms
 
     @property
     def score(self) -> float:
@@ -88,7 +177,7 @@ class BeeClust:
             temps += self.heatmap[bee[0], bee[1]]
         return temps / len(bees)
 
-    def _stop_time(self, bee: Tuple[int, int]) -> int:
+    def _stop_time(self, bee):
         T_local = self.heatmap[bee[0], bee[1]]
         wait_time = max(
             int(self.k_stay / (1 + np.abs(self.T_ideal - T_local))),
@@ -187,6 +276,10 @@ class BeeClust:
             self.map[bee[0], bee[1]] = AMNESIA
 
     def recalculate_heat(self) -> None:
-        self.heatmap = \
-            calculate_heatmap(self.map, self.T_heater,
-                              self.T_cooler, self.T_env, self.k_temp)
+        cdef double[:, :] heatmap_view
+        cdef numpy.int64_t[:, :] map_view
+        heatmap_view = self.heatmap
+        map_view = self.map
+
+        calculate_heatmap(heatmap_view, map_view, self.T_heater,
+                          self.T_cooler, self.T_env, self.k_temp)
