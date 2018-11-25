@@ -1,6 +1,7 @@
 import cython
 from libcpp.deque cimport deque
 from libcpp.set cimport set
+from libcpp.pair cimport pair
 
 from cython.view cimport array as carray
 
@@ -31,8 +32,6 @@ def check_type(check, targets, key):
             return check
 
     raise TypeError(f'{key} is invalid type')
-
-# [[x,y], [shape, step]]
 
 cdef State new_state(State a):
     return State(a.x, a.y, a.d + 1, a.t)
@@ -107,7 +106,7 @@ cdef State move_down_left(State a, int x_max):
 
 @cython.boundscheck(False)
 def calculate_heatmap(double[:, :] heatmap_view,  cnp.int64_t[:, :] map_view,
-                      int T_heater, int T_cooler, int T_env, float k_temp):
+                      int T_heater, int T_cooler, int T_env, double k_temp):
     cdef int row, col, i
     cdef double dist_heater, dist_cooler
     cdef double heating, cooling
@@ -243,4 +242,3 @@ def calculate_heatmap(double[:, :] heatmap_view,  cnp.int64_t[:, :] map_view,
                 cooling = (1 / dist_cooler) * <double>(T_env - T_cooler)
                 heatmap_view[row, col] = \
                     T_env + k_temp * (max(heating, 0) - max(cooling, 0))
-                    # T_env + k_temp * (heating - cooling)
