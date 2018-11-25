@@ -1,5 +1,11 @@
 # BeeClust # 
 
-Simplified BeeClust simulation implemented in Python.
+Simplified BeeClust simulation implemented in Cython.
 
-First you need to install the module. `python3 setup.py install`
+ - Build the package `python3 setup.py build_ext`
+ - Then install it `python3 setup.py install`
+ - Run it 
+     ```
+    from beeclust import BeeClust
+    BeeClust(map)
+    ``` 
