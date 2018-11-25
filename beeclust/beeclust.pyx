@@ -1,12 +1,14 @@
 import cython
-from libcpp.vector cimport vector
-from libcpp.pair cimport pair
-from libcpp.set cimport set
-from libcpp.deque cimport deque
+import numpy as np
+from .utils import calculate_heatmap, check_type
 
 cimport numpy
+from libcpp.vector cimport vector
+from libcpp.pair cimport pair
+from libcpp.deque cimport deque
+from cython.view cimport array as carray
+from libc.stdlib cimport rand, RAND_MAX
 
-from .utils import calculate_heatmap, np, check_type
 
 cdef int AMNESIA = -1
 cdef int EMPTY = 0
@@ -32,25 +34,32 @@ cdef list OBSTACLES = [
 ]
 
 TURN = {
-        BEE_UP: BEE_DOWN,
-        BEE_RIGHT: BEE_LEFT,
-        BEE_DOWN: BEE_UP,
-        BEE_LEFT: BEE_RIGHT,
+    BEE_UP: BEE_DOWN,
+    BEE_RIGHT: BEE_LEFT,
+    BEE_DOWN: BEE_UP,
+    BEE_LEFT: BEE_RIGHT,
 }
 
+cdef int _stop_time(pair[int, int] bee, double T_local,
+                    int k_stay, int T_ideal, int min_wait):
+        cdef int wait_time = <int>max(k_stay / (1 + abs(T_ideal - T_local)), min_wait)
+        return -wait_time
+
+
 class BeeClust:
-    def __init__(self, numpy.ndarray[numpy.int64_t, ndim=2] map,
-                 float p_changedir=0.2,
-                 float p_wall=0.8,
-                 float p_meet=0.8,
-                 float k_temp=0.9,
-                 int k_stay=50,
-                 int T_ideal=35,
-                 int T_heater=40,
-                 int T_cooler=5,
-                 int T_env=22,
-                 int min_wait=2):
-        self.map = check_type(map, [np.ndarray], 'map')
+    def __init__(self, map,
+                 p_changedir=0.2,
+                 p_wall=0.8,
+                 p_meet=0.8,
+                 k_temp=0.9,
+                 k_stay=50,
+                 T_ideal=35,
+                 T_heater=40,
+                 T_cooler=5,
+                 T_env=22,
+                 min_wait=2):
+        check_type(map, [np.ndarray], 'map')
+        self.map = map.astype(np.int64)
         self.p_changedir = check_type(p_changedir, [float, int], 'p_changedir')
         self.p_wall = check_type(p_wall, [float, int], 'p_wall')
         self.p_meet = check_type(p_meet, [float, int], 'p_meet')
@@ -77,7 +86,7 @@ class BeeClust:
         if T_cooler > T_env:
             raise ValueError('T_cooler cant be higher then T_env')
 
-        if self.map.ndim > 2:
+        if self.map.ndim != 2:
             raise ValueError('invalid shape')
         self.heatmap = np.zeros((map.shape[0], map.shape[1]))
         self.recalculate_heat()
@@ -105,23 +114,26 @@ class BeeClust:
 
         return p_bees
 
+    @cython.boundscheck(False)
     @property
     def swarms(self):
-        cdef set[pair[int, int]] procesed
+        # cdef set[pair[int, int]] procesed
         cdef deque[pair[int, int]] check
-        cdef pair[int, int] bee_origin, bee_l, bee_r, bee_u, bee_d, bee, t
+        cdef pair[int, int] bee_origin, bee_n
         cdef vector[pair[int, int]] swarm
         cdef vector[vector[pair[int, int]]] swarms
         cdef int found = 0
         cdef unsigned int i = 0, j = 0, k = 0
-        cdef vector[pair[int, int]] bees
-
-        for p_bee in self.bees:
-            bees.push_back(pair[int,int](p_bee[0], p_bee[1]))
+        cdef vector[pair[int, int]] bees = self.bees
+        cdef numpy.int64_t[:, :] map_view = self.map
+        cdef int[:, :] procesed = carray((map_view.shape[0], map_view.shape[1]),sizeof(int), 'i')
+        procesed[:,:] = 0
+        # for p_bee in self.bees:
+        #     bees.push_back(pair[int,int](p_bee[0], p_bee[1]))
 
         for i in range(bees.size()):
             bee_origin = bees[i]
-            if procesed.find(bee_origin) != procesed.end():
+            if procesed[bee_origin.first, bee_origin.second] == 1:
                 continue
             swarm.clear()
             check.clear()
@@ -129,7 +141,7 @@ class BeeClust:
             while check.size() > 0:
                 bee = check.front()
                 check.pop_front()
-                procesed.insert(bee)
+                procesed[bee.first, bee.second] = 1
 
                 for j in range(swarm.size()):
                     if bee == swarm[j]:
@@ -142,20 +154,30 @@ class BeeClust:
                 else:
                     swarm.push_back(bee)
 
-                bee_l = pair[int,int](bee.first + 1, bee.second)
-                bee_r = pair[int,int](bee.first, bee.second + 1)
-                bee_u = pair[int,int](bee.first - 1, bee.second)
-                bee_d = pair[int,int](bee.first, bee.second - 1)
-                j = 0
-                for j in range(bees.size()):
-                    if bee_l == bees[j]:
-                        check.push_back(bee_l)
-                    elif bee_r == bees[j] :
-                        check.push_back(bee_r)
-                    elif bee_u == bees[j]:
-                        check.push_back(bee_u)
-                    elif bee_d == bees[j]:
-                        check.push_back(bee_d)
+                bee_n = pair[int,int](bee.first + 1, bee.second)
+                if 0 <= bee_n.first < map_view.shape[0] and 0 <= bee_n.second < map_view.shape[1]:
+                    if map_view[bee_n.first, bee_n.second] < 0 or 1 <= map_view[bee_n.first, bee_n.second] <= 4:
+                        if procesed[bee_n.first, bee_n.second] == 0:
+                            check.push_back(bee_n)
+
+                bee_n = pair[int,int](bee.first, bee.second + 1)
+                if 0 <= bee_n.first < map_view.shape[0] and 0 <= bee_n.second < map_view.shape[1]:
+                    if map_view[bee_n.first, bee_n.second] < 0 or 1 <= map_view[bee_n.first, bee_n.second] <= 4:
+                        if procesed[bee_n.first, bee_n.second] == 0:
+                            check.push_back(bee_n)
+
+                bee_n = pair[int,int](bee.first - 1, bee.second)
+                if 0 <= bee_n.first < map_view.shape[0] and 0 <= bee_n.second < map_view.shape[1]:
+                    if map_view[bee_n.first, bee_n.second] < 0 or 1 <= map_view[bee_n.first, bee_n.second] <= 4:
+                        if procesed[bee_n.first, bee_n.second] == 0:
+                            check.push_back(bee_n)
+
+                bee_n = pair[int,int](bee.first, bee.second - 1)
+                if 0 <= bee_n.first < map_view.shape[0] and 0 <= bee_n.second < map_view.shape[1]:
+                    if map_view[bee_n.first, bee_n.second] < 0 or 1 <= map_view[bee_n.first, bee_n.second] <= 4:
+                        if procesed[bee_n.first, bee_n.second] == 0:
+                            check.push_back(bee_n)
+
             swarms.push_back(swarm)
 
         i = 0
@@ -177,98 +199,101 @@ class BeeClust:
             temps += self.heatmap[bee[0], bee[1]]
         return temps / len(bees)
 
-    def _stop_time(self, bee):
-        T_local = self.heatmap[bee[0], bee[1]]
-        wait_time = max(
-            int(self.k_stay / (1 + np.abs(self.T_ideal - T_local))),
-            self.min_wait
-        )
-        return -wait_time
-
-    def _obstacle_hit(self, bee):
-        if np.random.rand() < self.p_wall:
-            self.map[bee[0], bee[1]] = self._stop_time(bee)
+    def _obstacle_hit(self, numpy.int64_t[:, :] map_view,
+                      pair[int, int] bee, int stop_time):
+        if rand()/RAND_MAX < self.p_wall:
+            #T_local = self.heatmap[bee.first, bee.second]
+            map_view[bee.first, bee.second] = stop_time
         else:
-            self.map[bee[0], bee[1]] = TURN[self.map[bee[0], bee[1]]]
+            map_view[bee.first, bee.second] = TURN[map_view[bee.first, bee.second]]
 
-    def _change_direction(self, bee, amnesia):
+    def _change_direction(self, pair[int, int] bee, int amnesia):
         moves = [BEE_LEFT, BEE_DOWN, BEE_RIGHT, BEE_UP]
-        if not amnesia:
-            moves.remove(int(self.map[bee[0], bee[1]]))
+        if amnesia == 0:
+            moves.remove(self.map[bee.first, bee.second])
         new_dir = np.random.choice(moves)
 
-        self.map[bee[0], bee[1]] = new_dir
+        self.map[bee.first, bee.second] = new_dir
 
-    def _meet(self, bee):
-        if np.random.rand() < self.p_meet:
-            self.map[bee[0], bee[1]] = self._stop_time(bee)
+    @cython.boundscheck(False)
+    def tick(self):
+        cdef numpy.int64_t[:, :] map_view = self.map
+        cdef double[:, :] heatmap_view = self.heatmap
+        cdef vector[pair[int, int]] bees = self.bees
+        cdef int moved = 0
+        cdef int amnesia = 0
+        cdef int stop_time = 0
+        cdef double p_meet = self.p_meet
+        cdef double p_changedir = self.p_changedir
 
-    def tick(self) -> int:
-        moved = 0
-        bees = self.bees
-        for bee in bees:
+        for i in range(bees.size()):
+            amnesia = 0
+            stop_time = _stop_time(bees[i], heatmap_view[bees[i].first, bees[i].second], self.k_stay, self.T_ideal, self.min_wait)
             # BEE WAITED
-            if self.map[bee[0], bee[1]] < AMNESIA:
-                self.map[bee[0], bee[1]] += 1
+            if map_view[bees[i].first, bees[i].second] < AMNESIA:
+                map_view[bees[i].first, bees[i].second] += 1
                 continue
 
             # BEE CHANGE DIRECTION OR AMNESIA
-            amnesia = self.map[bee[0], bee[1]] == AMNESIA
-            if np.random.rand() < self.p_changedir or amnesia:
-                self._change_direction(bee, amnesia)
-                if amnesia:
+            if map_view[bees[i].first, bees[i].second] == AMNESIA:
+                amnesia = 1
+            if rand()/RAND_MAX < p_changedir or amnesia == 1:
+                self._change_direction(bees[i], amnesia)
+                if amnesia == 1:
                     continue
 
             # BEE TRIES TO GO UP
-            if self.map[bee[0], bee[1]] == BEE_UP:
-                if bee[0] - 1 < 0 or self.map[bee[0] - 1, bee[1]] in OBSTACLES:
-                    self._obstacle_hit(bee)
-                elif self.map[bee[0] - 1, bee[1]] < EMPTY or \
-                        self.map[bee[0] - 1, bee[1]] in BEE:
-                    self._meet(bee)
+            if map_view[bees[i].first, bees[i].second] == BEE_UP:
+                if bees[i].first - 1 < 0 or map_view[bees[i].first - 1, bees[i].second] >= 5:
+                    self._obstacle_hit(map_view, bees[i], stop_time)
+                elif map_view[bees[i].first - 1, bees[i].second] < EMPTY or 1 <= map_view[bees[i].first - 1, bees[i].second] <= 4:
+                    if rand()/RAND_MAX < p_meet:
+                        map_view[bees[i].first, bees[i].second] = stop_time
                 else:
                     moved += 1
-                    self.map[bee[0] - 1, bee[1]] = self.map[bee[0], bee[1]]
-                    self.map[bee[0], bee[1]] = EMPTY
+                    map_view[bees[i].first - 1, bees[i].second] = map_view[bees[i].first, bees[i].second]
+                    map_view[bees[i].first, bees[i].second] = EMPTY
 
             # BEE TRIES TO GO DOWN
-            elif self.map[bee[0], bee[1]] == BEE_DOWN:
-                if bee[0] + 1 >= self.map.shape[0] or \
-                        self.map[bee[0] + 1, bee[1]] in OBSTACLES:
-                    self._obstacle_hit(bee)
-                elif self.map[bee[0] + 1, bee[1]] < EMPTY or\
-                        self.map[bee[0] + 1, bee[1]] in BEE:
-                    self._meet(bee)
+            elif map_view[bees[i].first, bees[i].second] == BEE_DOWN:
+                if bees[i].first + 1 >= map_view.shape[0] or \
+                        map_view[bees[i].first + 1, bees[i].second] >= 5:
+                    self._obstacle_hit(map_view, bees[i], stop_time)
+                elif map_view[bees[i].first + 1, bees[i].second] < EMPTY or\
+                        1 <= map_view[bees[i].first + 1, bees[i].second] <= 4:
+                    if rand()/RAND_MAX < p_meet:
+                        map_view[bees[i].first, bees[i].second] = stop_time
                 else:
                     moved += 1
-                    self.map[bee[0] + 1, bee[1]] = self.map[bee[0], bee[1]]
-                    self.map[bee[0], bee[1]] = EMPTY
+                    map_view[bees[i].first + 1, bees[i].second] = map_view[bees[i].first, bees[i].second]
+                    map_view[bees[i].first, bees[i].second] = EMPTY
 
             # BEE TRIES TO GO LEFT
-            elif self.map[bee[0], bee[1]] == BEE_LEFT:
-                if bee[1] - 1 < 0 or self.map[bee[0], bee[1] - 1] in OBSTACLES:
-                    self._obstacle_hit(bee)
-                elif self.map[bee[0], bee[1] - 1] < EMPTY or\
-                        self.map[bee[0], bee[1] - 1] in BEE:
-                    self._meet(bee)
+            elif map_view[bees[i].first, bees[i].second] == BEE_LEFT:
+                if bees[i].second - 1 < 0 or map_view[bees[i].first, bees[i].second - 1] >= 5:
+                    self._obstacle_hit(map_view, bees[i], stop_time)
+                elif map_view[bees[i].first, bees[i].second - 1] < EMPTY or\
+                        1 <= map_view[bees[i].first, bees[i].second - 1] <= 4:
+                    if rand()/RAND_MAX < p_meet:
+                        map_view[bees[i].first, bees[i].second] = stop_time
                 else:
                     moved += 1
-                    self.map[bee[0], bee[1] - 1] = self.map[bee[0], bee[1]]
-                    self.map[bee[0], bee[1]] = EMPTY
+                    map_view[bees[i].first, bees[i].second - 1] = map_view[bees[i].first, bees[i].second]
+                    map_view[bees[i].first, bees[i].second] = EMPTY
 
             # BEE TRIES TO GO RIGHT
-            elif self.map[bee[0], bee[1]] == BEE_RIGHT:
-                if bee[1] + 1 >= self.map.shape[1] or \
-                        self.map[bee[0], bee[1] + 1] in OBSTACLES:
-                    self._obstacle_hit(bee)
-                elif self.map[bee[0], bee[1] + 1] < EMPTY or\
-                        self.map[bee[0], bee[1] + 1] in BEE:
-                    self._meet(bee)
+            elif map_view[bees[i].first, bees[i].second] == BEE_RIGHT:
+                if bees[i].second + 1 >= map_view.shape[1] or \
+                        map_view[bees[i].first, bees[i].second + 1] >= 5:
+                    self._obstacle_hit(map_view, bees[i], stop_time)
+                elif map_view[bees[i].first, bees[i].second + 1] < EMPTY or\
+                        1 <= map_view[bees[i].first, bees[i].second + 1] <= 4:
+                    if rand()/RAND_MAX < p_meet:
+                        map_view[bees[i].first, bees[i].second] = stop_time
                 else:
                     moved += 1
-                    self.map[bee[0], bee[1] + 1] = self.map[bee[0], bee[1]]
-                    self.map[bee[0], bee[1]] = EMPTY
-
+                    map_view[bees[i].first, bees[i].second + 1] = map_view[bees[i].first, bees[i].second]
+                    map_view[bees[i].first, bees[i].second] = EMPTY
         return moved
 
     def forget(self) -> None:
