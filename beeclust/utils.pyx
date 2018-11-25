@@ -136,6 +136,7 @@ def calculate_heatmap(double[:, :] heatmap_view,  cnp.int64_t[:, :] map_view,
         start = queue.front()
         queue.pop_front()
 
+        # TODO make DRY
         move = move_up(start)
         if move.t != -1 and map_view[move.x, move.y] != WALL:
             if move.t == HEATER:

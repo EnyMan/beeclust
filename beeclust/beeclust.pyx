@@ -154,6 +154,7 @@ class BeeClust:
                 else:
                     swarm.push_back(bee)
 
+                # TODO make DRY
                 bee_n = pair[int,int](bee.first + 1, bee.second)
                 if 0 <= bee_n.first < map_view.shape[0] and 0 <= bee_n.second < map_view.shape[1]:
                     if map_view[bee_n.first, bee_n.second] < 0 or 1 <= map_view[bee_n.first, bee_n.second] <= 4:
@@ -234,6 +235,7 @@ class BeeClust:
                 map_view[bees[i].first, bees[i].second] += 1
                 continue
 
+            # TODO make DRY
             # BEE CHANGE DIRECTION OR AMNESIA
             if map_view[bees[i].first, bees[i].second] == AMNESIA:
                 amnesia = 1
